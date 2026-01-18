@@ -27,7 +27,8 @@ type SearchResultMsg struct {
 
 // Search executes a ripgrep search with the given query and glob pattern
 // It returns a channel that will receive search results as they come in
-func (s *Searcher) Search(ctx context.Context, query, globPattern string) <-chan SearchResultMsg {
+// searchPath specifies the directory to search in (empty means current directory)
+func (s *Searcher) Search(ctx context.Context, query, globPattern, searchPath string) <-chan SearchResultMsg {
 	s.searchID++
 	currentID := s.searchID
 	resultChan := make(chan SearchResultMsg, 1)
@@ -48,7 +49,15 @@ func (s *Searcher) Search(ctx context.Context, query, globPattern string) <-chan
 
 		args = append(args, query)
 
-		cmd := exec.CommandContext(ctx, "rg", args...)
+		// Set search path (directory to search in)
+		// If empty, ripgrep will search from current directory
+		var cmd *exec.Cmd
+		if searchPath != "" {
+			cmd = exec.CommandContext(ctx, "rg", args...)
+			cmd.Dir = searchPath
+		} else {
+			cmd = exec.CommandContext(ctx, "rg", args...)
+		}
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
 			resultChan <- SearchResultMsg{

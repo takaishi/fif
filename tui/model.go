@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"os"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -11,7 +12,8 @@ import (
 )
 
 const (
-	debounceDuration = 250 * time.Millisecond
+	debounceDuration   = 250 * time.Millisecond
+	escSequenceTimeout = 100 * time.Millisecond // Timeout for ESC sequence detection
 )
 
 // InputMode represents which input field is active
@@ -47,6 +49,14 @@ type Model struct {
 	// Editor
 	editor editor.Editor
 
+	// Search scope
+	searchScope string // "project" or "directory"
+	gitRoot     string // Git repository root path
+	currentDir  string // Current working directory
+
+	// ESC sequence handling (for Alt key detection in some terminals)
+	waitingForEscSequence bool
+
 	// UI dimensions
 	width  int
 	height int
@@ -60,11 +70,24 @@ type textInput struct {
 // New creates a new Model instance
 func New() *Model {
 	ed, _ := editor.DetectEditor()
+
+	// Detect git repository and set initial search scope
+	gitRoot, isGitRepo := search.GetCurrentGitRoot()
+	currentDir, _ := os.Getwd()
+
+	searchScope := "directory" // Default to current directory
+	if isGitRepo {
+		searchScope = "project" // If in git repo, default to project scope
+	}
+
 	return &Model{
 		searcher:      search.NewSearcher(),
 		editor:        ed,
 		inputMode:     InputModeQuery,
 		selectedIndex: -1,
+		searchScope:   searchScope,
+		gitRoot:       gitRoot,
+		currentDir:    currentDir,
 	}
 }
 
@@ -98,6 +121,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case startSearchMsg:
 		return m.handleStartSearch(msg)
 
+	case escTimeoutMsg:
+		// ESC sequence timeout - treat as ESC key (quit)
+		if m.waitingForEscSequence {
+			m.waitingForEscSequence = false
+			if m.searchCancel != nil {
+				m.searchCancel()
+			}
+			return m, tea.Quit
+		}
+		return m, nil
+
 	default:
 		return m, nil
 	}
@@ -117,12 +151,104 @@ func (m *Model) Start() error {
 
 // handleKey processes keyboard input
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c", "esc":
+	keyStr := msg.String()
+
+	// FIRST: Check for special characters that represent Alt key sequences
+	// macOS sends Option+P as π (U+03C0) and Option+D as ∂ (U+2202)
+	// This must be checked BEFORE any other processing
+	//
+	// IMPORTANT: On macOS, when Option+P is pressed, the terminal sends
+	// the π character (U+03C0) as a regular rune WITHOUT the Alt modifier flag.
+	// This is macOS's standard behavior - Option key acts as a character modifier,
+	// not as a Meta key. We must intercept this character before it reaches
+	// the text input handler.
+	if len(msg.Runes) > 0 {
+		runeChar := msg.Runes[0]
+		// π (U+03C0) = Option+P on macOS
+		if runeChar == 'π' || runeChar == 0x03C0 {
+			// Alt+P: Switch to project scope
+			if m.gitRoot != "" {
+				if m.searchScope != "project" {
+					m.searchScope = "project"
+					return m, m.triggerSearch()
+				}
+			}
+			// Even if already in project scope, return to prevent text input
+			return m, nil
+		}
+		// ∂ (U+2202) = Option+D on macOS
+		if runeChar == '∂' || runeChar == 0x2202 {
+			// Alt+D: Switch to directory scope
+			if m.searchScope != "directory" {
+				m.searchScope = "directory"
+				return m, m.triggerSearch()
+			}
+			// Even if already in directory scope, return to prevent text input
+			return m, nil
+		}
+	}
+
+	// Also check keyStr for π/∂ (in case Runes is empty but String contains it)
+	if keyStr == "π" || keyStr == "∂" {
+		if keyStr == "π" {
+			if m.gitRoot != "" {
+				if m.searchScope != "project" {
+					m.searchScope = "project"
+					return m, m.triggerSearch()
+				}
+			}
+			return m, nil
+		}
+		if keyStr == "∂" {
+			if m.searchScope != "directory" {
+				m.searchScope = "directory"
+				return m, m.triggerSearch()
+			}
+			return m, nil
+		}
+	}
+
+	// Check for Alt key combinations
+	// Some terminals send Alt+P as ESC followed by 'p', so we check both
+	// the string representation and the Alt modifier
+	if msg.Alt {
+		// Alt key is pressed, check which key
+		if len(msg.Runes) > 0 {
+			runeChar := msg.Runes[0]
+			if runeChar == 'p' || runeChar == 'P' {
+				// Alt+P: Switch to project scope
+				if m.gitRoot != "" && m.searchScope != "project" {
+					m.searchScope = "project"
+					return m, m.triggerSearch()
+				}
+				return m, nil
+			}
+			if runeChar == 'd' || runeChar == 'D' {
+				// Alt+D: Switch to directory scope
+				if m.searchScope != "directory" {
+					m.searchScope = "directory"
+					return m, m.triggerSearch()
+				}
+				return m, nil
+			}
+		}
+	}
+
+	switch keyStr {
+	case "ctrl+c":
 		if m.searchCancel != nil {
 			m.searchCancel()
 		}
 		return m, tea.Quit
+
+	case "esc":
+		// ESC key might be the start of an Alt key sequence
+		// Set flag to wait for next key with timeout
+		m.waitingForEscSequence = true
+		// Set timeout - if no key comes within timeout, treat as ESC (quit)
+		return m, tea.Tick(escSequenceTimeout, func(time.Time) tea.Msg {
+			return escTimeoutMsg{}
+		})
 
 	case "tab":
 		// Switch between query and mask input
@@ -130,6 +256,24 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.inputMode = InputModeMask
 		} else {
 			m.inputMode = InputModeQuery
+		}
+		return m, nil
+
+	case "alt+p", "alt+P":
+		// Switch to project scope (git repository)
+		if m.gitRoot != "" && m.searchScope != "project" {
+			m.searchScope = "project"
+			// Trigger new search with new scope
+			return m, m.triggerSearch()
+		}
+		return m, nil
+
+	case "alt+d", "alt+D":
+		// Switch to directory scope (current directory)
+		if m.searchScope != "directory" {
+			m.searchScope = "directory"
+			// Trigger new search with new scope
+			return m, m.triggerSearch()
 		}
 		return m, nil
 
@@ -160,6 +304,33 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	default:
+		// Check if we're waiting for ESC sequence (Alt key)
+		if m.waitingForEscSequence {
+			m.waitingForEscSequence = false
+			// Check if this is Alt+P or Alt+D
+			if len(msg.Runes) > 0 {
+				runeChar := msg.Runes[0]
+				if runeChar == 'p' || runeChar == 'P' {
+					// Alt+P: Switch to project scope
+					if m.gitRoot != "" && m.searchScope != "project" {
+						m.searchScope = "project"
+						return m, m.triggerSearch()
+					}
+					return m, nil
+				}
+				if runeChar == 'd' || runeChar == 'D' {
+					// Alt+D: Switch to directory scope
+					if m.searchScope != "directory" {
+						m.searchScope = "directory"
+						return m, m.triggerSearch()
+					}
+					return m, nil
+				}
+			}
+			// If it's not P or D, ignore (ESC was part of sequence but not our command)
+			return m, nil
+		}
+
 		// Handle text input
 		return m.handleTextInput(msg)
 	}
@@ -167,6 +338,100 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleTextInput processes text input for query and mask fields
 func (m *Model) handleTextInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// FIRST: Check for special characters that might be Alt key sequences
+	// macOS sends Option+P as π (U+03C0) and Option+D as ∂ (U+2202)
+	// This must be checked BEFORE any other processing to prevent text input
+	keyStr := msg.String()
+
+	if len(msg.Runes) > 0 {
+		runeChar := msg.Runes[0]
+
+		// π (U+03C0) = Option+P on macOS
+		if runeChar == 'π' || runeChar == 0x03C0 {
+			// Alt+P: Switch to project scope
+			if m.gitRoot != "" {
+				if m.searchScope != "project" {
+					m.searchScope = "project"
+					return m, m.triggerSearch()
+				}
+			}
+			return m, nil
+		}
+		// ∂ (U+2202) = Option+D on macOS
+		if runeChar == '∂' || runeChar == 0x2202 {
+			// Alt+D: Switch to directory scope
+			if m.searchScope != "directory" {
+				m.searchScope = "directory"
+				return m, m.triggerSearch()
+			}
+			return m, nil
+		}
+	}
+
+	// Also check keyStr for π/∂ (in case Runes is empty but String contains it)
+	if keyStr == "π" || keyStr == "∂" {
+		if keyStr == "π" {
+			if m.gitRoot != "" {
+				if m.searchScope != "project" {
+					m.searchScope = "project"
+					return m, m.triggerSearch()
+				}
+			}
+			return m, nil
+		}
+		if keyStr == "∂" {
+			if m.searchScope != "directory" {
+				m.searchScope = "directory"
+				return m, m.triggerSearch()
+			}
+			return m, nil
+		}
+	}
+
+	// Check for Alt key combinations - prevent them from being treated as text input
+	// keyStr is already defined above
+	if keyStr == "alt+p" || keyStr == "alt+P" {
+		// Alt+P: Switch to project scope
+		if m.gitRoot != "" && m.searchScope != "project" {
+			m.searchScope = "project"
+			return m, m.triggerSearch()
+		}
+		return m, nil
+	}
+	if keyStr == "alt+d" || keyStr == "alt+D" {
+		// Alt+D: Switch to directory scope
+		if m.searchScope != "directory" {
+			m.searchScope = "directory"
+			return m, m.triggerSearch()
+		}
+		return m, nil
+	}
+
+	// Check Alt modifier and runes
+	if msg.Alt {
+		if len(msg.Runes) > 0 {
+			runeChar := msg.Runes[0]
+			if runeChar == 'p' || runeChar == 'P' {
+				// Alt+P: Switch to project scope
+				if m.gitRoot != "" && m.searchScope != "project" {
+					m.searchScope = "project"
+					return m, m.triggerSearch()
+				}
+				return m, nil
+			}
+			if runeChar == 'd' || runeChar == 'D' {
+				// Alt+D: Switch to directory scope
+				if m.searchScope != "directory" {
+					m.searchScope = "directory"
+					return m, m.triggerSearch()
+				}
+				return m, nil
+			}
+		}
+		// Alt key is pressed but not P or D - don't process as text input
+		return m, nil
+	}
+
 	var input *textInput
 	if m.inputMode == InputModeQuery {
 		input = &m.queryInput
@@ -174,7 +439,7 @@ func (m *Model) handleTextInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		input = &m.maskInput
 	}
 
-	switch msg.String() {
+	switch keyStr {
 	case "backspace":
 		if len(input.value) > 0 {
 			input.value = input.value[:len(input.value)-1]
@@ -231,6 +496,9 @@ type startSearchMsg struct {
 	Query string
 	Mask  string
 }
+
+// escTimeoutMsg is sent when ESC sequence timeout occurs
+type escTimeoutMsg struct{}
 
 // handleSearchResult processes search results
 func (m *Model) handleSearchResult(msg search.SearchResultMsg) (tea.Model, tea.Cmd) {
@@ -330,8 +598,16 @@ func (m *Model) handleStartSearch(msg startSearchMsg) (tea.Model, tea.Cmd) {
 	m.isSearching = true
 	m.searchError = nil
 
+	// Determine search path based on scope
+	searchPath := ""
+	if m.searchScope == "project" && m.gitRoot != "" {
+		searchPath = m.gitRoot
+	} else {
+		searchPath = m.currentDir
+	}
+
 	return m, func() tea.Msg {
-		resultChan := m.searcher.Search(ctx, msg.Query, msg.Mask)
+		resultChan := m.searcher.Search(ctx, msg.Query, msg.Mask, searchPath)
 		msg := <-resultChan
 		return msg
 	}

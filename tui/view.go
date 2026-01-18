@@ -29,6 +29,16 @@ var (
 	statusStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("245"))
 
+	scopeStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("255")).
+			Background(lipgloss.Color("62")).
+			Bold(true).
+			Padding(0, 1)
+
+	scopeInactiveStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("245")).
+				Padding(0, 1)
+
 	// Result styles
 	resultStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("252"))
@@ -137,12 +147,30 @@ func renderHeader(m *Model) string {
 	}
 	maskDisplay := maskLabelStyle.Render(fmt.Sprintf("%s %s", maskLabel, maskValue))
 
+	// Search scope tabs (In Project / In Directory)
+	var projectTab, directoryTab string
+	if m.searchScope == "project" {
+		projectTab = scopeStyle.Render("In Project")
+		directoryTab = scopeInactiveStyle.Render("In Directory")
+	} else {
+		projectTab = scopeInactiveStyle.Render("In Project")
+		directoryTab = scopeStyle.Render("In Directory")
+	}
+	
+	// Only show project tab if git repository is detected
+	scopeTabs := directoryTab
+	if m.gitRoot != "" {
+		scopeTabs = lipgloss.JoinHorizontal(lipgloss.Left, projectTab, " ", directoryTab)
+	}
+
 	// Build header line
 	headerLine := lipgloss.JoinHorizontal(lipgloss.Left,
 		icon+" ",
 		queryDisplay,
 		"  ",
 		maskDisplay,
+		"  ",
+		scopeTabs,
 	)
 
 	// Status line
