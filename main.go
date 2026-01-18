@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/takaishi/fif/config"
 	"github.com/takaishi/fif/tui"
 )
@@ -24,10 +25,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create and start TUI
+	// Create and start TUI with Bubble Tea
 	model := tui.New()
 	model.SetEditor(cfg.Editor)
-	if err := model.Start(); err != nil {
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}

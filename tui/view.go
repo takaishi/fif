@@ -16,8 +16,8 @@ var (
 			Padding(0, 1)
 
 	searchIconStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("220")).
-				Bold(true)
+			Foreground(lipgloss.Color("220")).
+			Bold(true)
 
 	queryInputStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("255")).
@@ -136,8 +136,12 @@ func renderHeader(m *Model) string {
 	}
 	queryDisplay := queryInputStyle.Render(queryValue)
 
-	// File mask
-	maskLabel := maskLabelStyle.Render("File mask:")
+	// File mask with checkbox
+	checkbox := "[ ]"
+	if m.maskEnabled {
+		checkbox = "[x]"
+	}
+	maskLabel := maskLabelStyle.Render(fmt.Sprintf("%s File mask:", checkbox))
 	maskValue := m.maskInput.value
 	if maskValue == "" {
 		maskValue = "*"
@@ -156,7 +160,7 @@ func renderHeader(m *Model) string {
 		projectTab = scopeInactiveStyle.Render("In Project")
 		directoryTab = scopeStyle.Render("In Directory")
 	}
-	
+
 	// Only show project tab if git repository is detected
 	scopeTabs := directoryTab
 	if m.gitRoot != "" {
@@ -262,7 +266,7 @@ func formatResultJetBrains(m *Model, result *search.SearchResult, width int) str
 	if fileInfoAreaWidth < 25 {
 		fileInfoAreaWidth = 25
 	}
-	
+
 	codeWidth := width - fileInfoAreaWidth
 	if codeWidth < 10 {
 		codeWidth = 10
@@ -280,10 +284,10 @@ func formatResultJetBrains(m *Model, result *search.SearchResult, width int) str
 	// Combine: code snippet (left, fixed width) + file info (right, fixed width)
 	// This ensures file info is always at the right edge
 	resultLine := lipgloss.JoinHorizontal(lipgloss.Left, codeSnippetStyled, fileInfoFormatted)
-	
+
 	// Ensure the entire line is exactly the specified width
 	resultLineStyled := lipgloss.NewStyle().Width(width).Render(resultLine)
-	
+
 	return resultLineStyled
 }
 

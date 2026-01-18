@@ -27,11 +27,12 @@ const (
 // Model represents the application state
 type Model struct {
 	// Input fields
-	query      string
-	mask       string
-	inputMode  InputMode
-	queryInput textInput
-	maskInput  textInput
+	query       string
+	mask        string
+	maskEnabled bool // Whether file mask is enabled
+	inputMode   InputMode
+	queryInput  textInput
+	maskInput   textInput
 
 	// Search state
 	searcher      *search.Searcher
@@ -88,6 +89,7 @@ func New() *Model {
 		searchScope:   searchScope,
 		gitRoot:       gitRoot,
 		currentDir:    currentDir,
+		maskEnabled:   true, // Default: mask is enabled
 	}
 }
 
@@ -445,6 +447,12 @@ func (m *Model) handleTextInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			input.value = input.value[:len(input.value)-1]
 		}
 	case " ":
+		// In mask input mode, space toggles mask enabled/disabled
+		if m.inputMode == InputModeMask {
+			m.maskEnabled = !m.maskEnabled
+			return m, m.triggerSearch()
+		}
+		// Otherwise, add space to input
 		input.value += " "
 	default:
 		if len(msg.Runes) > 0 {
@@ -486,6 +494,10 @@ func (m *Model) triggerSearch() tea.Cmd {
 	// Start search after debounce
 	query := m.query
 	mask := m.mask
+	// If mask is disabled, use empty string
+	if !m.maskEnabled {
+		mask = ""
+	}
 	return tea.Tick(debounceDuration, func(time.Time) tea.Msg {
 		return startSearchMsg{Query: query, Mask: mask}
 	})
