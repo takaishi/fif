@@ -28,7 +28,7 @@ func main() {
 	// Create and start TUI with Bubble Tea
 	model := tui.New()
 	model.SetEditor(cfg.Editor)
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseAllMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

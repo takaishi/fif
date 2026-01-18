@@ -139,7 +139,7 @@ func renderHeader(m *Model) string {
 	// File mask with checkbox
 	checkbox := "[ ]"
 	if m.maskEnabled {
-		checkbox = "[x]"
+		checkbox = "[✓]"
 	}
 	maskLabel := maskLabelStyle.Render(fmt.Sprintf("%s File mask:", checkbox))
 	maskValue := m.maskInput.value

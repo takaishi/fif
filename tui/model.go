@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/takaishi/fif/editor"
 	"github.com/takaishi/fif/preview"
 	"github.com/takaishi/fif/search"
@@ -133,6 +134,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		return m, nil
+
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
 
 	default:
 		return m, nil
@@ -469,6 +473,69 @@ func (m *Model) handleTextInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Trigger search with debounce
 	return m, m.triggerSearch()
+}
+
+// handleMouse handles mouse events
+func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	// Only handle mouse clicks (not mouse movement)
+	if msg.Type != tea.MouseLeft {
+		return m, nil
+	}
+
+	// Check if click is in the header area (first line, Y=0 or Y=1)
+	// Header is rendered with border and padding, so we need to account for that
+	// Border takes 1 line at top, so Y=1 is the first content line
+	if msg.Y != 1 {
+		return m, nil
+	}
+
+	// Calculate checkbox position using the same styles as renderHeader
+	// We need to match the exact rendering to get the correct position
+	searchIconStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("220")).
+		Bold(true)
+	queryInputStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("255")).
+		Background(lipgloss.Color("236"))
+
+	icon := searchIconStyle.Render("🔍")
+	iconWidth := lipgloss.Width(icon)
+
+	queryValue := m.queryInput.value
+	if m.inputMode == InputModeQuery {
+		queryValue += "█"
+	}
+	queryDisplay := queryInputStyle.Render(queryValue)
+	queryWidth := lipgloss.Width(queryDisplay)
+
+	// Account for:
+	// - Border (1 char left)
+	// - headerStyle padding (1 char left)
+	// - icon + " " (iconWidth + 1)
+	// - queryDisplay
+	// - "  " (2 chars spacer)
+	// Then checkbox starts at the beginning of maskLabel
+	borderWidth := 1
+	headerPadding := 1
+	iconSpaceWidth := 1 // Space after icon
+	spacerWidth := 2    // "  " between query and mask
+
+	// Checkbox starts after all the above
+	checkboxStartX := borderWidth + headerPadding + iconWidth + iconSpaceWidth + queryWidth + spacerWidth
+	checkboxWidth := 3 // "[x]" or "[ ]"
+
+	// Also allow clicking on "File mask:" text (extend clickable area)
+	// "File mask:" is 11 characters, so total clickable width is 3 + 1 + 11 = 15
+	clickableWidth := checkboxWidth + 1 + 11 // "[x] File mask:"
+
+	// Check if click is on the checkbox or "File mask:" text
+	if msg.X >= checkboxStartX && msg.X < checkboxStartX+clickableWidth {
+		// Toggle mask enabled
+		m.maskEnabled = !m.maskEnabled
+		return m, m.triggerSearch()
+	}
+
+	return m, nil
 }
 
 // triggerSearch starts a new search with debounce
