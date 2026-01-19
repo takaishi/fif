@@ -76,7 +76,10 @@ func (s *Searcher) Search(ctx context.Context, query, globPattern, searchPath st
 		}
 
 		// Read output line by line
+		// Use a larger buffer to handle very long lines (default is 64KB)
 		scanner := bufio.NewScanner(stdout)
+		buf := make([]byte, 0, 1024*1024) // 1MB initial capacity
+		scanner.Buffer(buf, 10*1024*1024) // Allow up to 10MB per line
 		results := make([]*SearchResult, 0)
 
 		for scanner.Scan() {

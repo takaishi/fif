@@ -78,6 +78,89 @@ Editor priority:
 2. `FIF_EDITOR` environment variable
 3. Auto-detection (tries `cursor` → `code` in order)
 
+### VS Code Keyboard Shortcut
+
+This project includes VS Code task configuration. To use a keyboard shortcut to launch `fif`, you need to add it to your user keybindings file.
+
+**Default shortcut**: `Ctrl+Shift+F` (or `Cmd+Shift+F` on macOS)
+
+The configuration file is located in `.vscode/`:
+- `.vscode/tasks.json` - Defines the task to run `fif` (reference only)
+
+**Setup Instructions:**
+
+**Step 1: Add task to user tasks.json (Recommended)**
+
+1. **Open your user tasks file**:
+   - `Cmd+Shift+P` (macOS) or `Ctrl+Shift+P` (Windows/Linux)
+   - Type "Tasks: Open User Tasks"
+   - Press Enter
+
+2. **Add the following task** to your user tasks.json:
+   ```json
+   {
+       "version": "2.0.0",
+       "tasks": [
+           {
+               "label": "Run fif",
+               "type": "shell",
+               "command": "fif",
+               "problemMatcher": [],
+               "presentation": {
+                   "reveal": "always",
+                   "panel": "dedicated",
+                   "focus": true,
+                   "close": true
+               }
+           }
+       ]
+   }
+   ```
+
+3. **Save the file** - The task will be available in all workspaces.
+
+**Step 2: Add keyboard shortcut to user keybindings**
+
+1. **Open your user keybindings file**:
+   - `Cmd+Shift+P` (macOS) or `Ctrl+Shift+P` (Windows/Linux)
+   - Type "Preferences: Open Keyboard Shortcuts (JSON)"
+   - Press Enter
+
+2. **Add the following keybindings** to disable VS Code's default search and bind `fif` to `Cmd+Shift+F`:
+   ```json
+   [
+     {
+       "key": "cmd+shift+f",
+       "command": "-workbench.action.findInFiles"
+     },
+     {
+       "key": "cmd+shift+f",
+       "command": "workbench.action.tasks.runTask",
+       "args": "Run fif"
+     }
+   ]
+   ```
+
+   > **Note**: On Windows/Linux, use `ctrl+shift+f` instead of `cmd+shift+f`.
+
+3. **Save the file** - VS Code will automatically reload the keybindings.
+
+**Alternative shortcuts:**
+
+If you prefer not to override VS Code's default search, you can use a different shortcut:
+```json
+{
+  "key": "cmd+k f",
+  "command": "workbench.action.tasks.runTask",
+  "args": "Run fif"
+}
+```
+
+**Troubleshooting:**
+
+- **Verify the task exists**: `Cmd+Shift+P` → "Tasks: Run Task" → Check if "Run fif" appears in the list
+- **Check for conflicts**: `Cmd+Shift+P` → "Preferences: Open Keyboard Shortcuts" → Search for your key combination to see if it's already bound
+
 ## Key Bindings
 
 | Key | Action |
