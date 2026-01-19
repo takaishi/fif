@@ -12,17 +12,17 @@ LDFLAGS=-ldflags "-s -w"
 ## build: Build the binary
 build:
 	@echo "Building $(BINARY_NAME)..."
-	@go build $(LDFLAGS) -o $(BINARY_NAME) .
+	@go build $(LDFLAGS) -o dist/$(BINARY_NAME) .
 	@echo "Build complete: $(BINARY_NAME)"
 
 ## run: Run the application
 run: build
-	@./$(BINARY_NAME)
+	@./dist/$(BINARY_NAME)
 
 ## clean: Remove build artifacts
 clean:
 	@echo "Cleaning..."
-	@rm -f $(BINARY_NAME)
+	@rm -f dist/$(BINARY_NAME)
 	@go clean
 	@echo "Clean complete"
 
